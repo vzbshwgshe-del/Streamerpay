@@ -247,6 +247,63 @@ export const StreamProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const [isDiscoveringChannel, setIsDiscoveringChannel] = useState<boolean>(false);
+  // Load the signed-in user's channel profile from Supabase.
+useEffect(() => {
+  let active = true;
+
+  const loadChannelProfile = async () => {
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (!active || authError || !authData.user) return;
+
+    const { data, error } = await supabase
+      .from('streamer_channels')
+      .select('*')
+      .eq('owner_id', authData.user.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!active) return;
+
+    if (error) {
+      console.error('Unable to load channel profile:', error.message);
+      return;
+    }
+
+    const channel = data?.[0];
+    if (!channel) return;
+
+    const loadedProfile: StreamerProfile = {
+      handle: channel.channel_handle || '',
+      channelName: channel.display_name || '',
+      channelId: channel.channel_id || '',
+      avatarUrl: channel.avatar_url || '',
+      channelUrl: channel.channel_url || '',
+      isConfigured: Boolean(
+        channel.channel_handle && channel.display_name
+      ),
+      customThankYou:
+        channel.custom_thank_you ||
+        'Thank you for fueling the stream with your Super Chat support! 💜',
+      currency: 'INR',
+    };
+
+    setProfile(loadedProfile);
+    localStorage.setItem(
+      'streamerpay_channel_config',
+      JSON.stringify(loadedProfile)
+    );
+  };
+
+  loadChannelProfile().catch((error) => {
+    console.error('Channel profile loading failed:', error);
+  });
+
+  return () => {
+    active = false;
+  };
+}, []);
 
   // Live Stream Information
   const [liveStream, setLiveStream] = useState<LiveStreamInfo>({
