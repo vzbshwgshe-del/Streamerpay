@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { getSuperChatTier, SuperChatTier } from '../lib/donation-rules';
+import { supabase } from '../lib/supabase';
 import {
   resolveYouTubeChannel,
   detectYouTubeLiveStream,
@@ -88,7 +89,7 @@ interface StreamContextType {
 
   // Auth
   isAdminLoggedIn: boolean;
-  loginAdmin: (user: string, pass: string) => boolean;
+  loginAdmin: (user: string, pass: string) => Promise<boolean>;
   logoutAdmin: () => void;
 
   // Toasts
@@ -708,26 +709,59 @@ export const StreamProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showToast(`Exported ${donations.length} records to CSV!`, 'success');
   };
 
-  // Auth State
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return sessionStorage.getItem('streamerpay_admin_auth') === 'true';
-  });
+  // Supabase Auth state. Never trust a client-side flag as authentication.
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
-  const loginAdmin = (user: string, pass: string): boolean => {
-    if ((user.trim().toLowerCase() === 'admin' || user.includes('@')) && pass.length >= 6) {
-      setIsAdminLoggedIn(true);
-      sessionStorage.setItem('streamerpay_admin_auth', 'true');
-      showToast('Welcome back, Creator! Authenticated to Creator Studio.', 'success');
-      return true;
+  useEffect(() => {
+    if (!supabase) {
+      setIsAdminLoggedIn(false);
+      return;
     }
-    showToast('Invalid login. Use demo credentials (admin / streamer2026)', 'error');
-    return false;
+    let active = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (active) setIsAdminLoggedIn(!error && Boolean(data.session));
+    }).catch(() => {
+      if (active) setIsAdminLoggedIn(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAdminLoggedIn(Boolean(session));
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const loginAdmin = async (user: string, pass: string): Promise<boolean> => {
+    if (!supabase) {
+      showToast('Supabase public configuration missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', 'error');
+      return false;
+    }
+    const email = user.trim();
+    if (!email || !pass) {
+      showToast('Enter your Supabase Auth email and password.', 'error');
+      return false;
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) {
+      showToast('Login failed. Check your email and password.', 'error');
+      return false;
+    }
+    setIsAdminLoggedIn(true);
+    showToast('Signed in securely with Supabase Auth.', 'success');
+    return true;
   };
 
-  const logoutAdmin = () => {
+  const logoutAdmin = async () => {
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        showToast('Could not sign out. Please try again.', 'error');
+        return;
+      }
+    }
     setIsAdminLoggedIn(false);
-    sessionStorage.removeItem('streamerpay_admin_auth');
-    showToast('You have been logged out of the creator dashboard.', 'info');
+    showToast('You have been logged out.', 'info');
   };
 
 
