@@ -1,6 +1,19 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { getSuperChatTier, SuperChatTier } from '../lib/donation-rules';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from 'react';
+
+import {
+  getSuperChatTier,
+  SuperChatTier,
+} from '../lib/donation-rules';
+
 import { supabase } from '../lib/supabase';
+
 import {
   resolveYouTubeChannel,
   detectYouTubeLiveStream,
@@ -10,6 +23,10 @@ import {
   YouTubeLiveStreamData,
 } from '../lib/youtube';
 
+// ============================================
+// TYPES
+// ============================================
+
 export interface Donation {
   id: string;
   supporterName: string;
@@ -18,7 +35,13 @@ export interface Donation {
   message: string;
   timestamp: number;
   tier: number;
-  status: 'completed' | 'successful' | 'pending' | 'failed' | 'flagged' | 'refunded';
+  status:
+    | 'completed'
+    | 'successful'
+    | 'pending'
+    | 'failed'
+    | 'flagged'
+    | 'refunded';
   paymentMethod: 'UPI' | 'Card' | 'NetBanking' | 'GooglePay';
   isSample?: boolean;
 }
@@ -65,13 +88,24 @@ interface StreamContextType {
   profile: StreamerProfile;
   liveStream: LiveStreamInfo;
   isDiscoveringChannel: boolean;
-  saveChannelHandle: (handle: string) => Promise<{ success: boolean; error?: string; channel?: YouTubeChannelData }>;
-  testChannelConnection: (handle: string) => Promise<{
+
+  saveChannelHandle: (
+    handle: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    channel?: YouTubeChannelData;
+  }>;
+
+  testChannelConnection: (
+    handle: string
+  ) => Promise<{
     success: boolean;
     error?: string;
     channel?: YouTubeChannelData;
     liveStream?: YouTubeLiveStreamData;
   }>;
+
   refreshLiveStatus: (manual?: boolean) => Promise<void>;
   updateCustomThankYou: (msg: string) => void;
 
@@ -79,28 +113,65 @@ interface StreamContextType {
   overlayConfig: OverlayConfig;
   updateOverlayConfig: (updates: Partial<OverlayConfig>) => void;
   triggerTestAlert: (customDonation?: Partial<Donation>) => void;
-  activeOverlayAlert: (Donation & { tierConfig: SuperChatTier }) | null;
+
+  activeOverlayAlert:
+    | (Donation & { tierConfig: SuperChatTier })
+    | null;
+
   dismissOverlayAlert: () => void;
 
   // Donations
   donations: Donation[];
-  addDonation: (donation: Omit<Donation, 'id' | 'timestamp' | 'tier' | 'status' | 'currency'>) => Donation;
+
+  addDonation: (
+    donation: Omit<
+      Donation,
+      'id' | 'timestamp' | 'tier' | 'status' | 'currency'
+    >
+  ) => Donation;
+
   exportDonationsCsv: () => void;
 
-  // Auth
+  // Authentication
   isAdminLoggedIn: boolean;
   loginAdmin: (user: string, pass: string) => Promise<boolean>;
-  logoutAdmin: () => void;
+  logoutAdmin: () => void | Promise<void>;
 
   // Toasts
   toasts: ToastMessage[];
-  showToast: (message: string, type?: 'success' | 'info' | 'error') => void;
+  showToast: (
+    message: string,
+    type?: 'success' | 'info' | 'error'
+  ) => void;
+
   removeToast: (id: string) => void;
 }
 
 const StreamContext = createContext<StreamContextType | null>(null);
 
-// Authentic demo community activity data in Indian Rupees (INR)
+// ============================================
+// DEFAULT VALUES
+// ============================================
+
+const DEFAULT_THANK_YOU =
+  'Thank you for fueling the stream with your Super Chat support! 💜';
+
+const DEFAULT_PROFILE: StreamerProfile = {
+  handle: '',
+  channelName: 'StreamerPay Creator',
+  channelId: '',
+  avatarUrl: '',
+  channelUrl: '',
+  isConfigured: false,
+  customThankYou: DEFAULT_THANK_YOU,
+  currency: 'INR',
+};
+
+// ============================================
+// DEMO DONATIONS
+// These are sample records, not real payments.
+// ============================================
+
 const INITIAL_DEMO_DONATIONS: Donation[] = [
   {
     id: 'sc-101',
@@ -155,7 +226,8 @@ const INITIAL_DEMO_DONATIONS: Donation[] = [
     supporterName: 'Pooja_Patel',
     amount: 1000,
     currency: 'INR',
-    message: 'HUGE MILESTONE! Dropping the magenta super chat for the community goal! 🇮🇳✨',
+    message:
+      'HUGE MILESTONE! Dropping the magenta super chat for the community goal! 🇮🇳✨',
     timestamp: Date.now() - 1000 * 60 * 75,
     tier: 6,
     status: 'completed',
@@ -176,205 +248,292 @@ const INITIAL_DEMO_DONATIONS: Donation[] = [
   },
 ];
 
-// Synthesized YouTube Super Chat chime via Web Audio API
+// ============================================
+// AUDIO ALERT
+// ============================================
+
 export function playSuperChatChime() {
   try {
     const AudioContextClass =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+      (
+        window as unknown as {
+          webkitAudioContext: typeof AudioContext;
+        }
+      ).webkitAudioContext;
 
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
     const now = ctx.currentTime;
-    const notes = [587.33, 880.0, 1174.66]; // D5, A5, D6 triumphant ascending chime
+    const notes = [587.33, 880.0, 1174.66];
 
     notes.forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      const startTime = now + idx * 0.08;
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+      osc.frequency.setValueAtTime(freq, startTime);
 
-      gain.gain.setValueAtTime(0, now + idx * 0.08);
-      gain.gain.linearRampToValueAtTime(0.2, now + idx * 0.08 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.45);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(
+        0.2,
+        startTime + 0.02
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.001,
+        startTime + 0.45
+      );
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      osc.start(now + idx * 0.08);
-      osc.stop(now + idx * 0.08 + 0.5);
+      osc.start(startTime);
+      osc.stop(startTime + 0.5);
     });
-  } catch (e) {
-    console.debug('Audio chime unable to play without user gesture', e);
-  }
-}
 
-export const StreamProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Streamer channel profile (Loaded from localStorage)
+    // Close the audio context after the chime finishes.
+    window.setTimeout(() => {
+      void ctx.close();
+    }, 1000);
+  } catch (error) {
+    console.debug(
+      'Audio chime unable to play without user gesture',
+      error
+    );
+  }
+        }
+// ============================================
+// STREAM PROVIDER
+// ============================================
+
+export const StreamProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  // --------------------------------------------
+  // PROFILE STATE
+  // --------------------------------------------
+
   const [profile, setProfile] = useState<StreamerProfile>(() => {
-    const saved = localStorage.getItem('streamerpay_channel_config');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem(
+        'streamerpay_channel_config'
+      );
+
+      if (saved) {
         const parsed = JSON.parse(saved);
+
         return {
-          handle: parsed.handle || '',
-          channelName: parsed.channelName || '',
-          channelId: parsed.channelId || '',
-          avatarUrl: parsed.avatarUrl || '',
-          channelUrl: parsed.channelUrl || '',
-          isConfigured: Boolean(parsed.handle && parsed.channelName),
-          customThankYou:
-            parsed.customThankYou ||
-            'Thank you for fueling the stream with your Super Chat support! 💜',
+          ...DEFAULT_PROFILE,
+          ...parsed,
           currency: 'INR',
         };
-      } catch (e) {
-        console.warn(e);
       }
-    }
-    // Default initial unconfigured state (no hardcoded fake creator)
-    return {
-      handle: '',
-      channelName: 'StreamerPay Creator',
-      channelId: '',
-      avatarUrl: '',
-      channelUrl: '',
-      isConfigured: false,
-      customThankYou: 'Thank you for fueling the stream with your Super Chat support! 💜',
-      currency: 'INR',
-    };
-  });
-
-  const [isDiscoveringChannel, setIsDiscoveringChannel] = useState<boolean>(false);
-  // Load the signed-in user's channel profile from Supabase.
-useEffect(() => {
-  let active = true;
-
-  const loadChannelProfile = async () => {
-    const { data: authData, error: authError } =
-      await supabase.auth.getUser();
-
-    if (!active || authError || !authData.user) return;
-
-    const { data, error } = await supabase
-      .from('streamer_channels')
-      .select('*')
-      .eq('owner_id', authData.user.id)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (!active) return;
-
-    if (error) {
-      console.error('Unable to load channel profile:', error.message);
-      return;
+    } catch (error) {
+      console.warn('Unable to load local profile:', error);
     }
 
-    const channel = data?.[0];
-    if (!channel) return;
-
-    const loadedProfile: StreamerProfile = {
-      handle: channel.channel_handle || '',
-      channelName: channel.display_name || '',
-      channelId: channel.channel_id || '',
-      avatarUrl: channel.avatar_url || '',
-      channelUrl: channel.channel_url || '',
-      isConfigured: Boolean(
-        channel.channel_handle && channel.display_name
-      ),
-      customThankYou:
-        channel.custom_thank_you ||
-        'Thank you for fueling the stream with your Super Chat support! 💜',
-      currency: 'INR',
-    };
-
-    setProfile(loadedProfile);
-    localStorage.setItem(
-      'streamerpay_channel_config',
-      JSON.stringify(loadedProfile)
-    );
-  };
-
-  loadChannelProfile().catch((error) => {
-    console.error('Channel profile loading failed:', error);
+    return DEFAULT_PROFILE;
   });
 
-  return () => {
-    active = false;
-  };
-}, []);
+  const [isDiscoveringChannel, setIsDiscoveringChannel] =
+    useState(false);
 
-  // Live Stream Information
-  const [liveStream, setLiveStream] = useState<LiveStreamInfo>({
-    isLive: false,
-    videoId: null,
-    title: null,
-    thumbnailUrl: null,
-    watchUrl: null,
-    checkedAt: Date.now(),
-    isLoading: false,
-    error: null,
-  });
+  const profileRef = useRef(profile);
 
-  // Toasts
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  // --------------------------------------------
+  // TOASTS
+  // --------------------------------------------
+
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((previous) =>
+      previous.filter((toast) => toast.id !== id)
+    );
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: 'success' | 'info' | 'error' = 'info') => {
-      const id = Math.random().toString(36).substring(2, 9);
-      setToasts((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => {
+    (
+      message: string,
+      type: 'success' | 'info' | 'error' = 'info'
+    ) => {
+      const id = Math.random()
+        .toString(36)
+        .substring(2, 9);
+
+      setToasts((previous) => [
+        ...previous,
+        { id, message, type },
+      ]);
+
+      window.setTimeout(() => {
         removeToast(id);
       }, 4000);
     },
     [removeToast]
   );
 
-  // Track profile ref for interval callbacks
-  const profileRef = useRef(profile);
+  // --------------------------------------------
+  // LOAD PROFILE FROM SUPABASE
+  // --------------------------------------------
+
   useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
+    let active = true;
 
-  // Concurrency guard to prevent overlapping live checks and duplicate requests
-  const isCheckingRef = useRef<boolean>(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const loadChannelProfile = async () => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-  // Core live check implementation with error handling
-  const performLiveCheck = useCallback(
-    async (manual = false) => {
-      const current = profileRef.current;
-      if (!current.handle) return;
+      if (!active || authError || !user) return;
 
-      if (isCheckingRef.current) {
-        // Prevent overlapping requests
+      const { data, error } = await supabase
+        .from('streamer_channels')
+        .select('*')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!active) return;
+
+      if (error) {
+        console.error(
+          'Unable to load channel profile:',
+          error.message
+        );
         return;
       }
 
+      if (!data) return;
+
+      const loadedProfile: StreamerProfile = {
+        handle: data.channel_handle || '',
+        channelName: data.display_name || '',
+        channelId: data.channel_id || '',
+        avatarUrl: data.avatar_url || '',
+        channelUrl: data.channel_url || '',
+        isConfigured: Boolean(
+          data.channel_handle && data.display_name
+        ),
+        customThankYou:
+          data.custom_thank_you || DEFAULT_THANK_YOU,
+        currency: 'INR',
+      };
+
+      setProfile(loadedProfile);
+
+      localStorage.setItem(
+        'streamerpay_channel_config',
+        JSON.stringify(loadedProfile)
+      );
+    };
+
+    loadChannelProfile().catch((error) => {
+      console.error('Profile loading failed:', error);
+    });
+
+    // Reload the user's profile after authentication changes.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'SIGNED_OUT' ||
+        event === 'USER_UPDATED'
+      ) {
+        if (event === 'SIGNED_OUT') {
+          if (active) {
+            setProfile(DEFAULT_PROFILE);
+            localStorage.removeItem(
+              'streamerpay_channel_config'
+            );
+          }
+        } else {
+          window.setTimeout(() => {
+            if (active) {
+              void loadChannelProfile();
+            }
+          }, 0);
+        }
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // --------------------------------------------
+  // LIVE STREAM STATE
+  // --------------------------------------------
+
+  const [liveStream, setLiveStream] =
+    useState<LiveStreamInfo>({
+      isLive: false,
+      videoId: null,
+      title: null,
+      thumbnailUrl: null,
+      watchUrl: null,
+      checkedAt: Date.now(),
+      isLoading: false,
+      error: null,
+    });
+
+  const isCheckingRef = useRef(false);
+  const timerRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // --------------------------------------------
+  // LIVE STREAM CHECK
+  // --------------------------------------------
+
+  const performLiveCheck = useCallback(
+    async (manual = false) => {
+      const current = profileRef.current;
+
+      if (!current.handle || isCheckingRef.current) return;
+
       isCheckingRef.current = true;
-      setLiveStream((prev) => ({ ...prev, isLoading: true }));
+
+      setLiveStream((previous) => ({
+        ...previous,
+        isLoading: true,
+      }));
 
       try {
-        const result = await detectYouTubeLiveStream(current.handle, current.channelId);
+        const result = await detectYouTubeLiveStream(
+          current.handle,
+          current.channelId
+        );
 
         if (result.error) {
-          // Failed check: update error without faking offline
-          setLiveStream((prev) => ({
-            ...prev,
+          setLiveStream((previous) => ({
+            ...previous,
             isLoading: false,
             error: result.error,
             checkedAt: Date.now(),
           }));
+
           if (manual) {
-            showToast(`Live status check failed: ${result.error}`, 'error');
+            showToast(
+              `Live status check failed: ${result.error}`,
+              'error'
+            );
           }
-        } else if (result.isLive) {
-          // Channel is ONLINE with live stream details
+
+          return;
+        }
+
+        if (result.isLive) {
           setLiveStream({
             isLive: true,
             videoId: result.videoId,
@@ -385,11 +544,14 @@ useEffect(() => {
             isLoading: false,
             error: null,
           });
+
           if (manual) {
-            showToast(`Channel is ONLINE: "${result.title || 'Live Stream'}"`, 'success');
+            showToast(
+              `Channel is ONLINE: "${result.title || 'Live Stream'}"`,
+              'success'
+            );
           }
         } else {
-          // Channel is OFFLINE - clear stream details gracefully
           setLiveStream({
             isLive: false,
             videoId: null,
@@ -400,20 +562,32 @@ useEffect(() => {
             isLoading: false,
             error: null,
           });
+
           if (manual) {
-            showToast('Channel is currently OFFLINE.', 'info');
+            showToast(
+              'Channel is currently OFFLINE.',
+              'info'
+            );
           }
         }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown network error';
-        setLiveStream((prev) => ({
-          ...prev,
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unknown network error';
+
+        setLiveStream((previous) => ({
+          ...previous,
           isLoading: false,
-          error: msg,
+          error: message,
           checkedAt: Date.now(),
         }));
+
         if (manual) {
-          showToast(`Live status check failed: ${msg}`, 'error');
+          showToast(
+            `Live status check failed: ${message}`,
+            'error'
+          );
         }
       } finally {
         isCheckingRef.current = false;
@@ -422,10 +596,12 @@ useEffect(() => {
     [showToast]
   );
 
-  // Public refresh function: performs immediate check and resets 60s timer
+  // --------------------------------------------
+  // REFRESH LIVE STATUS
+  // --------------------------------------------
+
   const refreshLiveStatus = useCallback(
     async (manual = true) => {
-      // Clear current interval so next automatic check is 60s after this manual refresh
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -435,28 +611,37 @@ useEffect(() => {
 
       if (profileRef.current.handle) {
         timerRef.current = setInterval(() => {
-          performLiveCheck(false);
+          void performLiveCheck(false);
         }, 60000);
       }
     },
     [performLiveCheck]
   );
 
-  // Automatic 60-second periodic live stream refresh with clean unmount handling
+  // Automatically refresh live status every 60 seconds.
   useEffect(() => {
-    if (!profile.handle) return;
+    if (!profile.handle) {
+      setLiveStream((previous) => ({
+        ...previous,
+        isLive: false,
+        videoId: null,
+        title: null,
+        thumbnailUrl: null,
+        watchUrl: null,
+        isLoading: false,
+      }));
 
-    // Check immediately on mount or when handle changes
-    performLiveCheck(false);
+      return;
+    }
+
+    void performLiveCheck(false);
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
-      timerRef.current = null;
     }
 
-    // 60-second polling timer
     timerRef.current = setInterval(() => {
-      performLiveCheck(false);
+      void performLiveCheck(false);
     }, 60000);
 
     return () => {
@@ -466,60 +651,163 @@ useEffect(() => {
       }
     };
   }, [profile.handle, performLiveCheck]);
+    // ============================================
+  // SAVE CHANNEL TO SUPABASE
+  // ============================================
 
-  // Save Channel Handle action
   const saveChannelHandle = async (
     rawHandle: string
-  ): Promise<{ success: boolean; error?: string; channel?: YouTubeChannelData }> => {
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    channel?: YouTubeChannelData;
+  }> => {
     const handle = normalizeHandle(rawHandle);
+
     if (!isValidHandle(handle)) {
       return {
         success: false,
-        error: 'Invalid YouTube handle. Must start with @ and be 3-30 characters (e.g. @MyGamingChannel).',
+        error:
+          'Invalid YouTube handle. Must start with @ and be 3-30 characters (e.g. @MyGamingChannel).',
       };
     }
 
     setIsDiscoveringChannel(true);
-    const discovery = await resolveYouTubeChannel(handle);
-    setIsDiscoveringChannel(false);
 
-    if (!discovery.success || !discovery.channel) {
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        return {
+          success: false,
+          error: 'Please sign in before saving your channel.',
+        };
+      }
+
+      const discovery = await resolveYouTubeChannel(handle);
+
+      if (!discovery.success || !discovery.channel) {
+        return {
+          success: false,
+          error:
+            discovery.error ||
+            `Could not find YouTube channel with handle ${handle}.`,
+        };
+      }
+
+      const { channel } = discovery;
+
+      const { data: existing, error: lookupError } =
+        await supabase
+          .from('streamer_channels')
+          .select('id')
+          .eq('owner_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      if (lookupError) {
+        console.error(lookupError);
+
+        return {
+          success: false,
+          error: 'Could not check your saved channel.',
+        };
+      }
+
+      const channelData = {
+        owner_id: user.id,
+        channel_handle: channel.handle,
+        channel_id: channel.channelId,
+        display_name: channel.title,
+        avatar_url: channel.avatarUrl || null,
+        channel_url: channel.url || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      let saveError;
+
+      if (existing) {
+        const result = await supabase
+          .from('streamer_channels')
+          .update(channelData)
+          .eq('id', existing.id)
+          .eq('owner_id', user.id);
+
+        saveError = result.error;
+      } else {
+        const result = await supabase
+          .from('streamer_channels')
+          .insert({
+            ...channelData,
+            custom_thank_you:
+              profileRef.current.customThankYou ||
+              DEFAULT_THANK_YOU,
+          });
+
+        saveError = result.error;
+      }
+
+      if (saveError) {
+        console.error('Channel save failed:', saveError.message);
+
+        return {
+          success: false,
+          error:
+            'Could not save your channel to the database. Please try again.',
+        };
+      }
+
+      const newProfile: StreamerProfile = {
+        handle: channel.handle,
+        channelName: channel.title,
+        channelId: channel.channelId,
+        avatarUrl: channel.avatarUrl || '',
+        channelUrl: channel.url || '',
+        isConfigured: true,
+        customThankYou:
+          profileRef.current.customThankYou ||
+          DEFAULT_THANK_YOU,
+        currency: 'INR',
+      };
+
+      profileRef.current = newProfile;
+      setProfile(newProfile);
+
+      localStorage.setItem(
+        'streamerpay_channel_config',
+        JSON.stringify(newProfile)
+      );
+
+      showToast(
+        `Channel "${channel.title}" saved successfully!`,
+        'success'
+      );
+
+      return {
+        success: true,
+        channel,
+      };
+    } catch (error) {
+      console.error('Channel save failed:', error);
+
       return {
         success: false,
-        error: discovery.error || `Could not find YouTube channel with handle ${handle}.`,
+        error:
+          'An unexpected error occurred while saving your channel.',
       };
+    } finally {
+      setIsDiscoveringChannel(false);
     }
-
-    const { channel } = discovery;
-    const newProfile: StreamerProfile = {
-      handle: channel.handle,
-      channelName: channel.title,
-      channelId: channel.channelId,
-      avatarUrl: channel.avatarUrl,
-      channelUrl: channel.url,
-      isConfigured: true,
-      customThankYou: profile.customThankYou,
-      currency: 'INR',
-    };
-
-    setProfile(newProfile);
-    localStorage.setItem('streamerpay_channel_config', JSON.stringify(newProfile));
-
-    // Reset interval and perform immediate check
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    performLiveCheck(false);
-    timerRef.current = setInterval(() => {
-      performLiveCheck(false);
-    }, 60000);
-
-    showToast(`Channel "${channel.title}" connected successfully!`, 'success');
-    return { success: true, channel };
   };
 
-  // Test Channel Connection action
+  // ============================================
+  // TEST CHANNEL CONNECTION
+  // ============================================
+
   const testChannelConnection = async (
     rawHandle: string
   ): Promise<{
@@ -529,334 +817,430 @@ useEffect(() => {
     liveStream?: YouTubeLiveStreamData;
   }> => {
     const handle = normalizeHandle(rawHandle);
+
     if (!isValidHandle(handle)) {
       return {
         success: false,
-        error: 'Invalid handle format. Must start with @ (e.g. @MyGamingChannel).',
+        error:
+          'Invalid handle format. Must start with @ (e.g. @MyGamingChannel).',
       };
     }
 
-    const discovery = await resolveYouTubeChannel(handle);
-    if (!discovery.success || !discovery.channel) {
+    try {
+      const discovery = await resolveYouTubeChannel(handle);
+
+      if (!discovery.success || !discovery.channel) {
+        return {
+          success: false,
+          error:
+            discovery.error ||
+            `Channel ${handle} could not be resolved.`,
+        };
+      }
+
+      const liveStream = await detectYouTubeLiveStream(
+        discovery.channel.handle,
+        discovery.channel.channelId
+      );
+
+      return {
+        success: true,
+        channel: discovery.channel,
+        liveStream,
+      };
+    } catch (error) {
+      console.error('Channel test failed:', error);
+
       return {
         success: false,
-        error: discovery.error || `Channel ${handle} could not be resolved.`,
+        error: 'Unable to test the channel connection.',
       };
     }
-
-    const liveRes = await detectYouTubeLiveStream(discovery.channel.handle, discovery.channel.channelId);
-
-    return {
-      success: true,
-      channel: discovery.channel,
-      liveStream: liveRes,
-    };
   };
 
+  // ============================================
+  // UPDATE THANK-YOU MESSAGE
+  // ============================================
+
   const updateCustomThankYou = (msg: string) => {
-    setProfile((prev) => {
-      const updated = { ...prev, customThankYou: msg };
-      localStorage.setItem('streamerpay_channel_config', JSON.stringify(updated));
-      return updated;
+    const updated = {
+      ...profileRef.current,
+      customThankYou: msg,
+    };
+
+    profileRef.current = updated;
+    setProfile(updated);
+
+    localStorage.setItem(
+      'streamerpay_channel_config',
+      JSON.stringify(updated)
+    );
+
+    const saveMessage = async () => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        showToast('Please sign in to save your settings.', 'error');
+        return;
+      }
+
+      const { data: channel, error: lookupError } =
+        await supabase
+          .from('streamer_channels')
+          .select('id')
+          .eq('owner_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      if (lookupError || !channel) {
+        showToast(
+          'Save your YouTube channel before changing this message.',
+          'error'
+        );
+        return;
+      }
+
+      const { error } = await supabase
+        .from('streamer_channels')
+        .update({
+          custom_thank_you: msg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', channel.id)
+        .eq('owner_id', user.id);
+
+      if (error) {
+        console.error(error);
+
+        showToast(
+          'Could not save the thank-you message.',
+          'error'
+        );
+        return;
+      }
+
+      showToast('Thank-you message saved!', 'success');
+    };
+
+    void saveMessage().catch((error) => {
+      console.error('Thank-you message update failed:', error);
     });
   };
 
-  // Overlay configuration
-  const [overlayConfig, setOverlayConfig] = useState<OverlayConfig>(() => {
-    const saved = localStorage.getItem('streamerpay_overlay_config');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.warn(e);
-      }
-    }
-    return {
-      token: 'obs_token_88a3f91b',
-      alertDurationSec: 8,
-      playAlertSound: true,
-      enableTts: false,
-      minAmountForAlert: 40,
-      fontScale: 'normal',
-    };
-  });
+  // ============================================
+  // OVERLAY CONFIGURATION
+  // ============================================
 
-  const updateOverlayConfig = (updates: Partial<OverlayConfig>) => {
-    setOverlayConfig((prev) => {
-      const next = { ...prev, ...updates };
-      localStorage.setItem('streamerpay_overlay_config', JSON.stringify(next));
+  const [overlayConfig, setOverlayConfig] =
+    useState<OverlayConfig>(() => {
+      try {
+        const saved = localStorage.getItem(
+          'streamerpay_overlay_config'
+        );
+
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+
+      return {
+        token: 'obs_token_88a3f91b',
+        alertDurationSec: 8,
+        playAlertSound: true,
+        enableTts: false,
+        minAmountForAlert: 40,
+        fontScale: 'normal',
+      };
+    });
+
+  const updateOverlayConfig = (
+    updates: Partial<OverlayConfig>
+  ) => {
+    setOverlayConfig((previous) => {
+      const next = {
+        ...previous,
+        ...updates,
+      };
+
+      localStorage.setItem(
+        'streamerpay_overlay_config',
+        JSON.stringify(next)
+      );
+
       return next;
     });
   };
+    // ─── Overlay Alert ──────────────────────────────────────────────
 
-  // Active overlay alert state
-  const [activeOverlayAlert, setActiveOverlayAlert] = useState<
-    (Donation & { tierConfig: SuperChatTier }) | null
-  >(null);
+  const [activeOverlayAlert, setActiveOverlayAlert] = useState<Donation | null>(
+    null
+  );
 
   const dismissOverlayAlert = useCallback(() => {
     setActiveOverlayAlert(null);
   }, []);
 
-  // Broadcast channel for OBS Overlay synchronization across tabs/browser sources
-  useEffect(() => {
-    let channel: BroadcastChannel | null = null;
-    try {
-      channel = new BroadcastChannel('streamerpay_overlay_channel');
-      channel.onmessage = (event) => {
-        if (event.data?.type === 'TRIGGER_ALERT') {
-          const donation: Donation = event.data.payload;
-          const tierConfig = getSuperChatTier(donation.amount);
-          setActiveOverlayAlert({ ...donation, tierConfig });
-          if (overlayConfig.playAlertSound) {
-            playSuperChatChime();
-          }
-        }
-      };
-    } catch (e) {
-      console.warn('BroadcastChannel not supported in this browser', e);
-    }
+  const triggerDonationAlert = useCallback(
+    (donation: Donation) => {
+      setActiveOverlayAlert(donation);
 
-    return () => {
-      channel?.close();
-    };
-  }, [overlayConfig.playAlertSound]);
-
-  // Alert dismiss timer
-  useEffect(() => {
-    if (!activeOverlayAlert) return;
-    const timer = setTimeout(() => {
-      dismissOverlayAlert();
-    }, overlayConfig.alertDurationSec * 1000);
-    return () => clearTimeout(timer);
-  }, [activeOverlayAlert, overlayConfig.alertDurationSec, dismissOverlayAlert]);
-
-  const triggerTestAlert = (customDonation?: Partial<Donation>) => {
-    const amount = customDonation?.amount ?? 200;
-    const testDonation: Donation = {
-      id: `test-${Date.now()}`,
-      supporterName: customDonation?.supporterName || 'SuperFan_India',
-      amount,
-      currency: 'INR',
-      message:
-        customDonation?.message ||
-        'Testing the OBS stream overlay alert in INR! Super Chat looks awesome! 🔥🇮🇳',
-      timestamp: Date.now(),
-      tier: getSuperChatTier(amount).tier,
-      status: 'completed',
-      paymentMethod: 'UPI',
-      isSample: true,
-    };
-
-    const tierConfig = getSuperChatTier(testDonation.amount);
-    setActiveOverlayAlert({ ...testDonation, tierConfig });
-
-    if (overlayConfig.playAlertSound) {
-      playSuperChatChime();
-    }
-
-    try {
-      const channel = new BroadcastChannel('streamerpay_overlay_channel');
-      channel.postMessage({ type: 'TRIGGER_ALERT', payload: testDonation });
-      channel.close();
-    } catch (e) {
-      console.warn(e);
-    }
-
-    showToast(`Test Super Chat (₹${testDonation.amount}) triggered on stream overlay!`, 'success');
-  };
-
-  // Donations list
-  const [donations, setDonations] = useState<Donation[]>(() => {
-    const saved = localStorage.getItem('streamerpay_donations');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Normalize existing currency to INR safely
-          return parsed.map((d: Donation) => ({ ...d, currency: 'INR' }));
-        }
-      } catch (e) {
-        console.warn(e);
-      }
-    }
-    return INITIAL_DEMO_DONATIONS;
-  });
-
-  const addDonation = (
-    donationData: Omit<Donation, 'id' | 'timestamp' | 'tier' | 'status' | 'currency'>
-  ): Donation => {
-    const tierConfig = getSuperChatTier(donationData.amount);
-    const newDonation: Donation = {
-      ...donationData,
-      currency: 'INR',
-      id: `sc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
-      timestamp: Date.now(),
-      tier: tierConfig.tier,
-      status: 'completed',
-    };
-
-    setDonations((prev) => {
-      const next = [newDonation, ...prev];
-      localStorage.setItem('streamerpay_donations', JSON.stringify(next));
-      return next;
-    });
-
-    // Also trigger overlay alert if above threshold
-    if (newDonation.amount >= overlayConfig.minAmountForAlert) {
-      setActiveOverlayAlert({ ...newDonation, tierConfig });
       if (overlayConfig.playAlertSound) {
         playSuperChatChime();
       }
+
       try {
         const channel = new BroadcastChannel('streamerpay_overlay_channel');
-        channel.postMessage({ type: 'TRIGGER_ALERT', payload: newDonation });
+        channel.postMessage({ type: 'NEW_SUPERCHAT', donation });
         channel.close();
-      } catch (e) {
-        console.warn(e);
+      } catch (error) {
+        console.warn('Overlay broadcast failed:', error);
       }
+    },
+    [overlayConfig.playAlertSound]
+  );
+
+  // Listen for alerts sent from other app components/tabs.
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+
+    try {
+      channel = new BroadcastChannel('streamerpay_overlay_channel');
+
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'NEW_SUPERCHAT' && event.data?.donation) {
+          setActiveOverlayAlert(event.data.donation as Donation);
+        }
+      };
+    } catch (error) {
+      console.warn('Overlay listener could not start:', error);
     }
 
-    return newDonation;
-  };
+    return () => channel?.close();
+  }, []);
 
-  const exportDonationsCsv = () => {
-    if (donations.length === 0) {
-      showToast('No donation records to export', 'info');
-      return;
+  const triggerTestAlert = useCallback(() => {
+    const testDonation: Donation = {
+      id: `test-${Date.now()}`,
+      donorName: 'Test Viewer',
+      amount: 100,
+      message: 'This is a test Super Chat!',
+      timestamp: new Date().toISOString(),
+      tier: 'blue',
+      status: 'completed',
+      currency: 'INR',
+    };
+
+    triggerDonationAlert(testDonation);
+    showToast('Test alert triggered!', 'success');
+  }, [triggerDonationAlert, showToast]);
+
+  // ─── Donations ──────────────────────────────────────────────────
+
+  const [donations, setDonations] = useState<Donation[]>(() => {
+    try {
+      const saved = localStorage.getItem('streamerpay_donations');
+      return saved ? JSON.parse(saved) : DEMO_DONATIONS;
+    } catch {
+      return DEMO_DONATIONS;
     }
-
-    const headers = [
-      'ID',
-      'Date',
-      'Supporter',
-      'Amount (INR)',
-      'Currency',
-      'Tier',
-      'Status',
-      'Payment Method',
-      'Message',
-    ];
-    const rows = donations.map((d) => [
-      d.id,
-      new Date(d.timestamp).toISOString(),
-      `"${d.supporterName.replace(/"/g, '""')}"`,
-      d.amount,
-      'INR',
-      d.tier,
-      d.status,
-      d.paymentMethod,
-      `"${(d.message || '').replace(/"/g, '""')}"`,
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute(
-      'download',
-      `streamerpay_donations_inr_${new Date().toISOString().slice(0, 10)}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    showToast(`Exported ${donations.length} records to CSV!`, 'success');
-  };
-
-  // Supabase Auth state. Never trust a client-side flag as authentication.
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  });
 
   useEffect(() => {
-    if (!supabase) {
-      setIsAdminLoggedIn(false);
-      return;
+    try {
+      localStorage.setItem('streamerpay_donations', JSON.stringify(donations));
+    } catch (error) {
+      console.warn('Could not save donations locally:', error);
     }
-    let active = true;
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (active) setIsAdminLoggedIn(!error && Boolean(data.session));
-    }).catch(() => {
-      if (active) setIsAdminLoggedIn(false);
+  }, [donations]);
+
+  const addDonation = useCallback(
+    (
+      donationData: Omit<
+        Donation,
+        'id' | 'timestamp' | 'tier' | 'status' | 'currency'
+      >
+    ): Donation => {
+      const donation: Donation = {
+        ...donationData,
+        id: `donation-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        tier: 'blue',
+        status: 'completed',
+        currency: 'INR',
+      };
+
+      setDonations((previous) => [donation, ...previous]);
+      triggerDonationAlert(donation);
+
+      return donation;
+    },
+    [triggerDonationAlert]
+  );
+
+  const exportDonationsCSV = useCallback(() => {
+    const headers = [
+      'Donor Name',
+      'Amount',
+      'Currency',
+      'Message',
+      'Timestamp',
+      'Status',
+    ];
+
+    const rows = donations.map((donation) => [
+      donation.donorName,
+      donation.amount,
+      donation.currency,
+      donation.message,
+      donation.timestamp,
+      donation.status,
+    ]);
+
+    const escapeCSV = (value: unknown) =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCSV).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], {
+      type: 'text/csv;charset=utf-8;',
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAdminLoggedIn(Boolean(session));
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = 'streamerpay-donations.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [donations]);
+
+  // ─── Supabase Authentication ────────────────────────────────────
+
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error('Could not check Supabase session:', error);
+        setIsAdminLoggedIn(false);
+      } else {
+        setIsAdminLoggedIn(Boolean(data.session?.user));
+      }
+
+      setIsAuthLoading(false);
+    };
+
+    void checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        setIsAdminLoggedIn(Boolean(session?.user));
+        setIsAuthLoading(false);
+      }
     });
+
     return () => {
-      active = false;
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  const loginAdmin = async (user: string, pass: string): Promise<boolean> => {
-    if (!supabase) {
-      showToast('Supabase public configuration missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', 'error');
-      return false;
-    }
-    const email = user.trim();
-    if (!email || !pass) {
-      showToast('Enter your Supabase Auth email and password.', 'error');
-      return false;
-    }
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) {
-      showToast('Login failed. Check your email and password.', 'error');
-      return false;
-    }
-    setIsAdminLoggedIn(true);
-    showToast('Signed in securely with Supabase Auth.', 'success');
-    return true;
-  };
+  const loginAdmin = useCallback(
+    async (email: string, password: string): Promise<boolean> => {
+      const normalizedEmail = email.trim();
 
-  const logoutAdmin = async () => {
-    if (supabase) {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        showToast('Could not sign out. Please try again.', 'error');
-        return;
+      if (!normalizedEmail || !password) {
+        showToast('Please enter your email and password.', 'error');
+        return false;
       }
-    }
-    setIsAdminLoggedIn(false);
-    showToast('You have been logged out.', 'info');
-  };
 
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (error) {
+        showToast(error.message || 'Login failed.', 'error');
+        return false;
+      }
+
+      showToast('Login successful!', 'success');
+      return true;
+    },
+    [showToast]
+  );
+
+  const logoutAdmin = useCallback(async (): Promise<void> => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      showToast('Logout failed. Please try again.', 'error');
+      console.error('Supabase logout failed:', error);
+      return;
+    }
+
+    setIsAdminLoggedIn(false);
+    showToast('Logged out successfully.', 'success');
+  }, [showToast]);
+
+  // ─── Context Value ───────────────────────────────────────────────
+
+  const value: StreamContextType = {
+    profile,
+    isDiscoveringChannel,
+    liveStream,
+    toasts,
+    showToast,
+    removeToast,
+    saveChannelHandle,
+    testChannelConnection,
+    updateCustomThankYou,
+    overlayConfig,
+    updateOverlayConfig,
+    activeOverlayAlert,
+    dismissOverlayAlert,
+    triggerTestAlert,
+    donations,
+    addDonation,
+    exportDonationsCSV,
+    isAdminLoggedIn,
+    isAuthLoading,
+    loginAdmin,
+    logoutAdmin,
+  };
 
   return (
-    <StreamContext.Provider
-      value={{
-        profile,
-        liveStream,
-        isDiscoveringChannel,
-        saveChannelHandle,
-        testChannelConnection,
-        refreshLiveStatus,
-        updateCustomThankYou,
-        overlayConfig,
-        updateOverlayConfig,
-        triggerTestAlert,
-        activeOverlayAlert,
-        dismissOverlayAlert,
-        donations,
-        addDonation,
-        exportDonationsCsv,
-        isAdminLoggedIn,
-        loginAdmin,
-        logoutAdmin,
-        toasts,
-        showToast,
-        removeToast,
-      }}
-    >
+    <StreamContext.Provider value={value}>
       {children}
     </StreamContext.Provider>
   );
 };
 
-export function useStream(): StreamContextType {
+export const useStream = (): StreamContextType => {
   const context = useContext(StreamContext);
+
   if (!context) {
-    throw new Error('useStream must be used within a StreamProvider');
+    throw new Error('useStream must be used inside a StreamProvider');
   }
+
   return context;
-}
+};
