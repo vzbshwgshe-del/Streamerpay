@@ -3,7 +3,7 @@ import { useStream } from '../../context/StreamContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Shield, Lock, User, ArrowLeft, KeyRound, Sparkles } from 'lucide-react';
+import { Shield, Lock, User, ArrowLeft, KeyRound } from 'lucide-react';
 
 interface AdminLoginProps {
   onBackToPublic: () => void;
@@ -13,30 +13,24 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToPublic }) => {
   const { loginAdmin } = useStream();
   const { themeConfig } = useTheme();
 
-  const [username, setUsername] = useState<string>('admin');
-  const [password, setPassword] = useState<string>('streamer2026');
+  const [username, setUsername] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-
-    setTimeout(() => {
-      const ok = loginAdmin(username, password);
+    try {
+      const ok = await loginAdmin(username, password);
+      if (!ok) setError('Login failed. Use the email and password of the account created in Supabase Authentication.');
+    } catch {
+      setError('Unable to sign in right now. Check your connection and try again.');
+    } finally {
       setIsLoading(false);
-      if (!ok) {
-        setError('Invalid credentials. Please enter valid creator credentials or use demo credentials.');
-      }
-    }, 600);
-  };
-
-  const handleQuickDemoFill = () => {
-    setUsername('admin');
-    setPassword('streamer2026');
-    setError(null);
+    }
   };
 
   return (
@@ -75,11 +69,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToPublic }) => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Username or Email"
+            label="Supabase Auth Email"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             leftAddon={<User className="w-4 h-4" />}
-            placeholder="admin or creator@streamer.com"
+            placeholder="creator@example.com"
             required
           />
 
@@ -118,26 +112,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToPublic }) => {
           </Button>
         </form>
 
-        {/* Demo Helper box */}
-        <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Demo Testing Credentials
-            </span>
-            <button
-              type="button"
-              onClick={handleQuickDemoFill}
-              className="text-[11px] text-[var(--theme-primary)] hover:underline font-medium cursor-pointer"
-            >
-              Fill Demo
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2 font-mono text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl">
-            <div>User: <span className="text-slate-200">admin</span></div>
-            <div>Pass: <span className="text-slate-200">streamer2026</span></div>
-          </div>
-        </div>
+
       </div>
     </div>
   );
