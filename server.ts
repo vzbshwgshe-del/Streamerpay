@@ -11,6 +11,54 @@ const HOST = '0.0.0.0';
 
 app.use(express.json());
 
+// -------------------------------------------------------------
+// Supabase server-side connection check
+// The secret key must exist only in the server environment (Render), never in Vite/client code.
+// This endpoint checks connectivity only; it does not expose database rows or credentials.
+// -------------------------------------------------------------
+app.get('/api/health/supabase', async (_req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, '');
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY?.trim();
+
+  if (!supabaseUrl || !supabaseSecretKey) {
+    return res.status(503).json({
+      success: false,
+      connected: false,
+      error: 'Supabase server environment variables are not configured.',
+    });
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/streamer_channels?select=id&limit=1`, {
+      method: 'GET',
+      headers: {
+        apikey: supabaseSecretKey,
+        Authorization: `Bearer ${supabaseSecretKey}`,
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      // Do not return raw provider errors or headers to public callers.
+      console.error(`Supabase health check failed with HTTP ${response.status}`);
+      return res.status(502).json({
+        success: false,
+        connected: false,
+        error: 'Supabase rejected the connection. Check the server key and table setup.',
+      });
+    }
+
+    return res.json({ success: true, connected: true });
+  } catch (error) {
+    console.error('Supabase health check request failed:', error instanceof Error ? error.message : 'unknown error');
+    return res.status(502).json({
+      success: false,
+      connected: false,
+      error: 'Could not reach Supabase from the server.',
+    });
+  }
+});
+
 // Helper for clean User-Agent on external requests
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
