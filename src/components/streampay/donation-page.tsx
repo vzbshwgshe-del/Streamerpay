@@ -202,20 +202,6 @@ export const DonationPage: React.FC = () => {
           </div>
         )}
 
-        {/* Quick refresh stream status button in top corner */}
-        {profile.handle && (
-          <div className="flex justify-end -mb-1">
-            <button
-              onClick={() => refreshLiveStatus()}
-              disabled={liveStream.isLoading}
-              title="Refresh live stream detection status"
-              className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1 px-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60 shrink-0"
-            >
-              <RefreshCw className={`w-3 h-3 ${liveStream.isLoading ? 'animate-spin' : ''}`} />
-              <span className="text-[11px]">Refresh Status</span>
-            </button>
-          </div>
-        )}
 
         {/* 1. YouTube Channel Logo & 2. Official YouTube Channel Name with Handle directly BELOW */}
         <div className="flex flex-col items-center justify-center text-center">
@@ -522,8 +508,8 @@ export const DonationPage: React.FC = () => {
                 </span>
               </div>
 
-              {/* Message body with YouTube Super Chat tier contentBg - only shown for donations above ₹20 */}
-              {amount > 20 && (
+              {/* Message body with YouTube Super Chat tier contentBg - only shown for donations of ₹20 or above */}
+              {amount >= 20 && (
                 <div
                   className="px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed transition-colors duration-200 break-words"
                   style={{
@@ -535,7 +521,7 @@ export const DonationPage: React.FC = () => {
                     <p className="whitespace-pre-wrap">{message.trim()}</p>
                   ) : (
                     <p className="italic opacity-70 text-xs">
-                      Your message will appear here on the livestream overlay...
+                      Your message will appear here
                     </p>
                   )}
                 </div>

@@ -475,14 +475,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-md">
                 <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
                   <span>Total Revenue</span>
-                  <span className="text-emerald-400 font-bold text-sm">INR ₹</span>
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 font-bold text-xs sm:text-sm">INR ₹</span>
+                  </div>
                 </div>
                 <p className="text-2xl font-black text-white mt-2">
                   {formatCurrency(totalRevenue)}
-                </p>
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>From {donations.length} Super Chats</span>
                 </p>
               </div>
 
@@ -543,15 +542,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div className="flex items-center justify-between mt-1 pt-2 border-t border-slate-800/60">
                   <span className="text-[11px] text-slate-500">Auto-refreshes every 60s</span>
-                  <button
-                    type="button"
-                    onClick={() => refreshLiveStatus(true)}
-                    disabled={liveStream.isLoading}
-                    className="text-xs text-[var(--theme-primary)] hover:underline font-semibold cursor-pointer flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${liveStream.isLoading ? 'animate-spin' : ''}`} />
-                    <span>{liveStream.isLoading ? 'Checking' : 'Check'}</span>
-                  </button>
+                  {liveStream.isLoading && (
+                    <span className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      Checking...
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -904,15 +900,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="text-xs font-semibold text-slate-300">
                         Live Stream Detection Status:
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => refreshLiveStatus(true)}
-                        disabled={liveStream.isLoading}
-                        className="text-xs text-[var(--theme-primary)] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${liveStream.isLoading ? 'animate-spin' : ''}`} />
-                        <span>{liveStream.isLoading ? 'Checking live status...' : 'Refresh now'}</span>
-                      </button>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Auto-checks every 60s
+                      </span>
                     </div>
 
                     {liveStream.isLoading ? (

@@ -65,7 +65,7 @@ export const Shell: React.FC<ShellProps> = ({ currentView, onNavigate, children 
       {/* Main Top Header */}
       {currentView !== 'overlay' && (
         <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0b0e14]/85 border-b border-slate-800/80 transition-colors">
-          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-4 sm:gap-6">
             {/* Left: StreamerPay Logo */}
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -106,7 +106,7 @@ export const Shell: React.FC<ShellProps> = ({ currentView, onNavigate, children 
               )}
             </div>
 
-            {/* Right: Compact Clearly Visible Dashboard Button */}
+            {/* Right: Compact Clearly Visible Dashboard / Donation Page Button */}
             <div className="flex items-center gap-2 shrink-0">
               {currentView === 'public' ? (
                 <Button
@@ -123,10 +123,10 @@ export const Shell: React.FC<ShellProps> = ({ currentView, onNavigate, children 
                 <Button
                   variant="secondary"
                   size="sm"
-                  leftIcon={<ArrowLeft className="w-3.5 h-3.5 shrink-0" />}
+                  leftIcon={<ArrowLeft className="w-3 h-3 shrink-0" />}
                   rightIcon={<ExternalLink className="w-3 h-3 opacity-60 hidden sm:inline" />}
                   onClick={() => onNavigate('public')}
-                  className="font-medium text-xs px-2.5 py-1.5 h-8 min-h-[32px] sm:px-3 sm:py-1.5 whitespace-nowrap"
+                  className="font-medium text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 h-7.5 sm:h-8 min-h-[30px] sm:min-h-[32px] whitespace-nowrap shadow-sm"
                   aria-label="Back to Public Donation Page"
                 >
                   Donation Page

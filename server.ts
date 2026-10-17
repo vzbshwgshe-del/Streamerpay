@@ -184,19 +184,25 @@ app.get('/api/youtube/live', async (req, res) => {
           const data = await searchRes.json();
           if (data.items && data.items.length > 0) {
             const liveItem = data.items[0];
-            const videoId = liveItem.id?.videoId;
-            return res.json({
-              success: true,
-              isLive: true,
-              source: 'api',
-              videoId,
-              title: liveItem.snippet.title,
-              thumbnailUrl:
-                liveItem.snippet.thumbnails?.high?.url ||
-                `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-              watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
-              checkedAt: Date.now(),
-            });
+            const itemChannelId = liveItem.snippet?.channelId;
+            // Confirm the video belongs to the configured channel ID
+            if (!itemChannelId || itemChannelId === channelId) {
+              const videoId = liveItem.id?.videoId;
+              if (videoId) {
+                return res.json({
+                  success: true,
+                  isLive: true,
+                  source: 'api',
+                  videoId,
+                  title: liveItem.snippet.title,
+                  thumbnailUrl:
+                    liveItem.snippet.thumbnails?.high?.url ||
+                    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                  watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                  checkedAt: Date.now(),
+                });
+              }
+            }
           }
           return res.json({
             success: true,
@@ -214,10 +220,10 @@ app.get('/api/youtube/live', async (req, res) => {
       }
     }
 
-    // Option 2: Live endpoint check (via @handle/live or channel/channelId/live)
-    const targetUrl = handle
-      ? `https://www.youtube.com/${encodeURIComponent(handle)}/live`
-      : `https://www.youtube.com/channel/${encodeURIComponent(channelId)}/live`;
+    // Option 2: Live endpoint check (authoritative by channelId if known, else handle)
+    const targetUrl = channelId
+      ? `https://www.youtube.com/channel/${encodeURIComponent(channelId)}/live`
+      : `https://www.youtube.com/${encodeURIComponent(handle)}/live`;
 
     const response = await fetch(targetUrl, {
       headers: {
@@ -260,27 +266,84 @@ app.get('/api/youtube/live', async (req, res) => {
       html.includes('This live event has ended');
 
     if (isLiveFlag && !isExplicitOffline) {
-      // Extract video ID
-      const videoIdMatch =
-        finalUrl.match(/v=([a-zA-Z0-9_-]{11})/) ||
-        html.match(/"watchEndpoint":\{"videoId":"([a-zA-Z0-9_-]{11})"/) ||
-        html.match(/"currentVideoEndpoint":\{[^}]*"videoId":"([a-zA-Z0-9_-]{11})"/) ||
-        html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-      const videoId = videoIdMatch ? videoIdMatch[1] : null;
+      let videoId: string | null = null;
+      let liveTitle: string | null = null;
+      let streamOwnerChannelId: string | null = null;
 
-      if (videoId) {
-        // Extract actual live title
+      // Parse ytInitialData to extract videoId, title, and owner channel together
+      const dataMatch = html.match(/var ytInitialData = ({.+?});<\/script>/);
+      if (dataMatch) {
+        try {
+          const ytData = JSON.parse(dataMatch[1]);
+          videoId = ytData.currentVideoEndpoint?.watchEndpoint?.videoId || null;
+          const playerOverlay =
+            ytData.playerOverlays?.playerOverlayRenderer?.videoDetails?.playerOverlayVideoDetailsRenderer;
+          liveTitle = playerOverlay?.title?.simpleText || null;
+
+          const contents =
+            ytData.contents?.twoColumnWatchNextResults?.results?.results?.contents || [];
+          for (const item of contents) {
+            if (item.videoSecondaryInfoRenderer) {
+              const owner = item.videoSecondaryInfoRenderer.owner?.videoOwnerRenderer;
+              streamOwnerChannelId =
+                owner?.navigationEndpoint?.browseEndpoint?.browseId || null;
+            }
+            if (!liveTitle && item.videoPrimaryInfoRenderer) {
+              liveTitle =
+                item.videoPrimaryInfoRenderer.title?.runs?.map((r: any) => r.text).join('') || null;
+            }
+          }
+        } catch (e) {
+          console.warn('ytInitialData parse failed in live check', e);
+        }
+      }
+
+      // Fallback extraction strictly for the primary stream
+      if (!videoId) {
+        const cveMatch = html.match(/"currentVideoEndpoint":\{[^}]*"videoId":"([a-zA-Z0-9_-]{11})"/);
+        if (cveMatch) {
+          videoId = cveMatch[1];
+        } else {
+          const urlMatch = finalUrl.match(/[\?&]v=([a-zA-Z0-9_-]{11})/);
+          if (urlMatch) videoId = urlMatch[1];
+        }
+      }
+
+      if (!liveTitle) {
         const titleMatch =
           html.match(/"videoPrimaryInfoRenderer":\{"title":\{"runs":\[\{"text":"([^"]+)"/) ||
           html.match(/<meta property="og:title" content="([^"]+)"/) ||
-          html.match(/"title":{"runs":\[{"text":"([^"]+)"/) ||
           html.match(/<title>([^<]+) - YouTube<\/title>/);
-        let liveTitle = titleMatch ? titleMatch[1] : 'Live Stream';
+        liveTitle = titleMatch ? titleMatch[1] : 'Live Stream';
+      }
+
+      // If owner channel ID was identified and a channelId was configured, confirm they match!
+      if (channelId && streamOwnerChannelId && streamOwnerChannelId !== channelId) {
+        console.warn(
+          `Detected stream belongs to channel ${streamOwnerChannelId}, but configured channel is ${channelId}. Discarding mismatch.`
+        );
+        return res.json({
+          success: true,
+          isLive: false,
+          source: 'web',
+          videoId: null,
+          title: null,
+          thumbnailUrl: null,
+          watchUrl: null,
+          checkedAt: Date.now(),
+        });
+      }
+
+      if (videoId) {
         try {
-          liveTitle = JSON.parse(`"${liveTitle.replace(/"/g, '\\"')}"`);
+          liveTitle = JSON.parse(`"${(liveTitle || 'Live Stream').replace(/"/g, '\\"')}"`);
         } catch {
           // ignore
         }
+
+        // The thumbnail and watchUrl are strictly derived from the same verified video ID
+        const verifiedWatchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const verifiedThumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
         return res.json({
           success: true,
@@ -288,8 +351,8 @@ app.get('/api/youtube/live', async (req, res) => {
           source: 'web',
           videoId,
           title: liveTitle,
-          thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          thumbnailUrl: verifiedThumbnailUrl,
+          watchUrl: verifiedWatchUrl,
           checkedAt: Date.now(),
         });
       }
