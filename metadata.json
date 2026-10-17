@@ -1,0 +1,6 @@
+{
+  "name": "StreamerPay - Livestream Super Chat & Tipping Platform",
+  "description": "YouTube Super Chat-inspired livestream tipping and donation platform with customizable OBS stream overlays, creator dashboard, and five theme styles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
